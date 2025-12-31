@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches flake.nix
+        run: |
+          FLAKE_VERSION=$(grep -m1 'version = ' flake.nix | sed 's/.*"\(.*\)".*/\1/')
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$FLAKE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "ERROR: Tag version ($TAG_VERSION) doesn't match flake.nix version ($FLAKE_VERSION)"
+            exit 1
+          fi
+          echo "Version verified: $FLAKE_VERSION"
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          # Extract changelog section for this version
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Get content between this version header and the next version header (or EOF)
+          CHANGELOG=$(awk "/^## \[${VERSION}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md)
+
+          # If no specific changelog found, use a default message
+          if [[ -z "$CHANGELOG" ]]; then
+            CHANGELOG="Release v${VERSION}"
+          fi
+
+          # Write to file for multi-line support
+          echo "$CHANGELOG" > release_notes.md
+          echo "changelog_file=release_notes.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          generate_release_notes: false
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
