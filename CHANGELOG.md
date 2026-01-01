@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-12-31
+
+### Added
+- Explicit conform.nvim configuration for Nix-managed formatters
+- Spell check toggle keymap (`<leader>us`)
+- Auto-enable spell checking for markdown, gitcommit filetypes
+- Semantic release GitHub Action for automated versioning
+- UI/Toggle keymap group (`<leader>u`)
+
+### Changed
+- Removed unused preinstalled plugins (telescope, nvim-notify, dressing-nvim)
+- Removed Copilot plugins from preinstall (disabled in config)
+- Removed treesitter `ensure_installed` (Nix provides all parsers)
+- Updated CLAUDE.md with semantic commit guidelines
+
 ## [1.0.0] - 2025-12-25
 
 ### Added
@@ -72,5 +87,6 @@ Check version compatibility in your configuration:
 }
 ```
 
-[Unreleased]: https://github.com/zach-source/z-nvim/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/zach-source/z-nvim/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/zach-source/z-nvim/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/zach-source/z-nvim/releases/tag/v1.0.0

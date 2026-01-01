@@ -1,0 +1,248 @@
+name: Semantic Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type (auto, major, minor, patch)'
+        required: false
+        default: 'auto'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Analyze commits for version bump
+        id: bump
+        run: |
+          LATEST_TAG="${{ steps.latest_tag.outputs.tag }}"
+          MANUAL_BUMP="${{ github.event.inputs.bump }}"
+
+          # If manual bump specified and not 'auto', use it
+          if [[ -n "$MANUAL_BUMP" && "$MANUAL_BUMP" != "auto" ]]; then
+            echo "bump=$MANUAL_BUMP" >> $GITHUB_OUTPUT
+            echo "Manual bump: $MANUAL_BUMP"
+            exit 0
+          fi
+
+          # Get commits since last tag
+          if [[ "$LATEST_TAG" == "v0.0.0" ]]; then
+            COMMITS=$(git log --pretty=format:"%s" HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"%s" ${LATEST_TAG}..HEAD)
+          fi
+
+          echo "Commits since $LATEST_TAG:"
+          echo "$COMMITS"
+
+          # Check for breaking changes (major)
+          if echo "$COMMITS" | grep -qE "^(feat|fix|refactor|perf)(\(.+\))?!:|BREAKING CHANGE"; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+            echo "Detected: MAJOR (breaking change)"
+            exit 0
+          fi
+
+          # Check for features (minor)
+          if echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+            echo "Detected: MINOR (new feature)"
+            exit 0
+          fi
+
+          # Check for fixes/refactors (patch)
+          if echo "$COMMITS" | grep -qE "^(fix|refactor|perf|docs|style|test|chore|ci|build)(\(.+\))?:"; then
+            echo "bump=patch" >> $GITHUB_OUTPUT
+            echo "Detected: PATCH (fix/improvement)"
+            exit 0
+          fi
+
+          # No conventional commits found
+          echo "bump=none" >> $GITHUB_OUTPUT
+          echo "No releasable commits found"
+
+      - name: Calculate new version
+        id: version
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          LATEST_TAG="${{ steps.latest_tag.outputs.tag }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+
+          # Extract version numbers
+          VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          # Handle initial version
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Bump version
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update flake.nix version
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+
+          # Update version string
+          sed -i "s/version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" flake.nix
+
+          # Update versionInfo
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$NEW_VERSION"
+          sed -i "s/major = [0-9]*;/major = $MAJOR;/" flake.nix
+          sed -i "s/minor = [0-9]*;/minor = $MINOR;/" flake.nix
+          sed -i "s/patch = [0-9]*;/patch = $PATCH;/" flake.nix
+
+          echo "Updated flake.nix to version $NEW_VERSION"
+          grep -A5 "version = " flake.nix | head -10
+
+      - name: Generate changelog entry
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+          LATEST_TAG="${{ steps.latest_tag.outputs.tag }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Get commits grouped by type
+          if [[ "$LATEST_TAG" == "v0.0.0" ]]; then
+            COMMITS=$(git log --pretty=format:"%s" HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"%s" ${LATEST_TAG}..HEAD)
+          fi
+
+          # Create changelog entry
+          {
+            echo "## [$NEW_VERSION] - $DATE"
+            echo ""
+
+            # Features
+            FEATS=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^feat\(([^)]*)\)\?: /- /' || true)
+            if [[ -n "$FEATS" ]]; then
+              echo "### Added"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            # Fixes
+            FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^fix\(([^)]*)\)\?: /- /' || true)
+            if [[ -n "$FIXES" ]]; then
+              echo "### Fixed"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Refactors/Performance
+            REFACTORS=$(echo "$COMMITS" | grep -E "^(refactor|perf)(\(.+\))?:" | sed 's/^[a-z]*\(([^)]*)\)\?: /- /' || true)
+            if [[ -n "$REFACTORS" ]]; then
+              echo "### Changed"
+              echo "$REFACTORS"
+              echo ""
+            fi
+
+            # Other (docs, chore, ci, etc)
+            OTHERS=$(echo "$COMMITS" | grep -E "^(docs|chore|ci|build|style|test)(\(.+\))?:" | sed 's/^[a-z]*\(([^)]*)\)\?: /- /' || true)
+            if [[ -n "$OTHERS" ]]; then
+              echo "### Other"
+              echo "$OTHERS"
+              echo ""
+            fi
+          } > new_changelog_entry.md
+
+          cat new_changelog_entry.md
+
+      - name: Update CHANGELOG.md
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+
+          # Insert new entry after the header
+          if [[ -f CHANGELOG.md ]]; then
+            # Find the line with first ## and insert before it
+            head -n $(grep -n "^## \[" CHANGELOG.md | head -1 | cut -d: -f1 | xargs -I{} expr {} - 1) CHANGELOG.md > temp_changelog.md
+            cat new_changelog_entry.md >> temp_changelog.md
+            tail -n +$(grep -n "^## \[" CHANGELOG.md | head -1 | cut -d: -f1) CHANGELOG.md >> temp_changelog.md
+            mv temp_changelog.md CHANGELOG.md
+          fi
+
+          # Update comparison links at bottom
+          sed -i "s|\[Unreleased\]:.*|[Unreleased]: https://github.com/zach-source/z-nvim/compare/v${NEW_VERSION}...HEAD|" CHANGELOG.md
+
+          echo "Updated CHANGELOG.md"
+
+      - name: Commit and tag
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add flake.nix CHANGELOG.md
+          git commit -m "release: v${NEW_VERSION}"
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+
+          git push origin main
+          git push origin "v${NEW_VERSION}"
+
+          echo "Created and pushed v${NEW_VERSION}"
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.bump != 'none'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          body_path: new_changelog_entry.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bump Type**: ${{ steps.bump.outputs.bump }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous**: ${{ steps.latest_tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: No release needed
+        if: steps.bump.outputs.bump == 'none'
+        run: |
+          echo "No releasable commits found since ${{ steps.latest_tag.outputs.tag }}"
+          echo "Use conventional commits (feat:, fix:, refactor:, etc.) to trigger releases"

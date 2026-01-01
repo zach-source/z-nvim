@@ -26,12 +26,12 @@
     }:
     let
       # Semantic versioning
-      version = "1.0.0";
+      version = "1.1.0";
 
       # Version components for programmatic access
       versionInfo = {
         major = 1;
-        minor = 0;
+        minor = 1;
         patch = 0;
         # LazyVim version this config targets
         lazyvimVersion = "15.*";

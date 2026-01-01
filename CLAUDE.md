@@ -78,6 +78,60 @@ jj git push        # Push to remote
 ## Making Changes
 
 1. Edit `modules/lazyvim/default.nix` for LazyVim changes
-2. Run `nvim --headless -c 'qall'` to verify syntax
+2. Run `nix run .#test -- --check` to verify syntax
 3. Run `home-manager switch` to apply
 4. Test in nvim, check `:messages` and logs for errors
+
+## Semantic Commits & Versioning
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automatic semantic versioning. Releases are created automatically when commits are pushed to `main`.
+
+### Commit Format
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+### Commit Types → Version Bump
+
+| Type | Description | Version Bump |
+|------|-------------|--------------|
+| `feat:` | New feature | **Minor** (1.x.0) |
+| `fix:` | Bug fix | Patch (1.0.x) |
+| `refactor:` | Code refactoring | Patch |
+| `perf:` | Performance improvement | Patch |
+| `docs:` | Documentation only | Patch |
+| `style:` | Formatting, no code change | Patch |
+| `test:` | Adding tests | Patch |
+| `chore:` | Maintenance tasks | Patch |
+| `ci:` | CI/CD changes | Patch |
+| `build:` | Build system changes | Patch |
+| `feat!:` or `BREAKING CHANGE` | Breaking change | **Major** (x.0.0) |
+
+### Examples
+
+```bash
+# New feature (minor bump: 1.0.0 → 1.1.0)
+jj describe -m "feat: add telescope integration"
+
+# Bug fix (patch bump: 1.1.0 → 1.1.1)
+jj describe -m "fix: correct LSP server paths"
+
+# Breaking change (major bump: 1.1.1 → 2.0.0)
+jj describe -m "feat!: remove deprecated nixvim module"
+
+# Non-release commits (no version bump)
+jj describe -m "docs: update README examples"
+```
+
+### Manual Release
+
+To manually trigger a release with a specific bump:
+
+```bash
+gh workflow run semantic-release.yml -f bump=minor
+```
