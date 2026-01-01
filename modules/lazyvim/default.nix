@@ -158,6 +158,38 @@
         { import = "lazyvim.plugins.extras.formatting.black" },
         { import = "lazyvim.plugins.extras.linting.eslint" },
 
+        -- Explicit conform.nvim config for Nix-managed formatters
+        {
+          "stevearc/conform.nvim",
+          opts = {
+            formatters_by_ft = {
+              python = { "black" },
+              javascript = { "prettier" },
+              javascriptreact = { "prettier" },
+              typescript = { "prettier" },
+              typescriptreact = { "prettier" },
+              json = { "prettier" },
+              jsonc = { "prettier" },
+              yaml = { "prettier" },
+              markdown = { "prettier" },
+              html = { "prettier" },
+              css = { "prettier" },
+              scss = { "prettier" },
+              lua = { "stylua" },
+              nix = { "nixfmt" },
+              go = { "gofmt", "goimports" },
+              rust = { "rustfmt" },
+              sh = { "shfmt" },
+              bash = { "shfmt" },
+              terraform = { "terraform_fmt" },
+            },
+            format_on_save = {
+              timeout_ms = 3000,
+              lsp_fallback = true,
+            },
+          },
+        },
+
         -- Editor enhancements (Snacks replaces telescope, neo-tree, indent-blankline)
         { import = "lazyvim.plugins.extras.editor.leap" },
         { import = "lazyvim.plugins.extras.editor.illuminate" },
@@ -416,14 +448,9 @@
             require("nvim-treesitter").setup(opts)
           end,
           opts = {
-            -- Don't auto-install - parsers provided by Nix
+            -- Parsers provided by Nix (nvim-treesitter.withAllGrammars)
             auto_install = false,
-            ensure_installed = {
-              "bash", "c", "diff", "html", "javascript", "jsdoc", "json",
-              "jsonc", "lua", "luadoc", "luap", "markdown", "markdown_inline",
-              "printf", "python", "query", "regex", "toml", "tsx", "typescript",
-              "vim", "vimdoc", "xml", "yaml", "go", "rust", "nix",
-            },
+            -- ensure_installed removed: Nix provides all parsers via withAllGrammars
             highlight = {
               enable = true,
               additional_vim_regex_highlighting = false,
@@ -1133,17 +1160,34 @@
     vim.keymap.set("n", "<leader>Wd", layouts.dev_with_claude, { desc = "Dev + Claude" })
     vim.keymap.set("n", "<leader>Wf", layouts.focus, { desc = "Focus Mode" })
 
+    -- === TOGGLES ===
+    vim.keymap.set("n", "<leader>us", function()
+      vim.opt.spell = not vim.o.spell
+      vim.notify("Spell: " .. (vim.o.spell and "ON" or "OFF"), vim.log.levels.INFO)
+    end, { desc = "Toggle Spell Check" })
+
     -- === GROUP LABELS (for which-key) ===
     vim.keymap.set("n", "<leader>f", "+find", { desc = "Find" })
     vim.keymap.set("n", "<leader>s", "+search", { desc = "Search" })
     vim.keymap.set("n", "<leader>b", "+buffer", { desc = "Buffer" })
     vim.keymap.set("n", "<leader>w", "+window", { desc = "Window" })
     vim.keymap.set("n", "<leader>W", "+workspace", { desc = "Workspace" })
+    vim.keymap.set("n", "<leader>u", "+ui/toggle", { desc = "UI/Toggle" })
   '';
 
   # Auto-launch dev layout on startup (optional)
   xdg.configFile."nvim/lua/config/autocmds.lua".text = ''
     -- Custom autocommands for workspace management
+
+    -- Enable spell checking for text-heavy filetypes
+    vim.api.nvim_create_autocmd("FileType", {
+      pattern = { "markdown", "text", "gitcommit", "NeogitCommitMessage" },
+      callback = function()
+        vim.opt_local.spell = true
+        vim.opt_local.spelllang = "en"
+      end,
+      desc = "Enable spell checking for text files",
+    })
 
     -- Return Zellij to normal mode on exit (required for zellij-nav.nvim)
     vim.api.nvim_create_autocmd("VimLeave", {
@@ -1446,17 +1490,16 @@
       # Complete Snacks.nvim suite (folke's unified plugin collection)
       snacks-nvim
 
-      # AI assistance (preinstalled)
-      copilot-lua
-      # CopilotChat-nvim # Disabled - requires fzflua integration module
-      copilot-lsp
+      # AI assistance - REMOVED: Copilot disabled due to LSP errors
+      # copilot-lua      # Disabled in config
+      # copilot-lsp      # Disabled in config
 
       # Essential LazyVim dependencies
       which-key-nvim
       nvim-treesitter # Base treesitter plugin for API
       nvim-treesitter.withAllGrammars # All language parsers
-      telescope-nvim
-      telescope-fzf-native-nvim
+      # telescope-nvim           # Replaced by snacks.picker
+      # telescope-fzf-native-nvim # Unused (telescope disabled)
       plenary-nvim
       nvim-web-devicons
       nui-nvim
@@ -1479,8 +1522,8 @@
 
       # UI and visual
       mini-nvim # Complete mini.nvim suite
-      nvim-notify
-      dressing-nvim
+      # nvim-notify   # Replaced by snacks.notifier
+      # dressing-nvim # Replaced by snacks.input
 
       # Colorschemes
       catppuccin-nvim # Catppuccin theme (default)
